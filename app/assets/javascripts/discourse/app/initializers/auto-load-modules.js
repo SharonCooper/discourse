@@ -25,6 +25,7 @@ export function autoLoadModules(container, registry) {
     site: container.lookup("site:main"),
     session: container.lookup("session:main"),
     topicTrackingState: container.lookup("topic-tracking-state:main"),
+    registry: container.registry,
   };
   setOwner(context, container);
 
