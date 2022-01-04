@@ -972,7 +972,8 @@ class ApplicationController < ActionController::Base
   end
 
   def run_second_factor!(action_class)
-    manager = SecondFactor::AuthManager.new(current_user, guardian, action_class)
+    action = action_class.new(current_user, guardian)
+    manager = SecondFactor::AuthManager.new(current_user, guardian, action)
     manager.run!(request, params, secure_session)
   end
 end

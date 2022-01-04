@@ -11,10 +11,10 @@ class SecondFactor::AuthManager
 
   attr_reader :allowed_methods
 
-  def initialize(current_user, guardian, action_class)
+  def initialize(current_user, guardian, action)
     @current_user = current_user
     @guardian = guardian
-    @action_class = action_class
+    @action = action
     @allowed_methods = Set.new([
       UserSecondFactor.methods[:totp],
       UserSecondFactor.methods[:security_key],
@@ -27,11 +27,10 @@ class SecondFactor::AuthManager
 
   def run!(request, params, secure_session)
     if !allowed_methods.any? { |m| @current_user.valid_second_factor_method_for_user?(m) }
-      action = @action_class.new(params, @current_user, @guardian)
-      action.no_second_factors_enabled!
+      @action.no_second_factors_enabled!(params)
       create_result(:no_second_factor)
     elsif nonce = params[:second_factor_nonce].presence
-      second_factor_auth_successful(nonce, secure_session)
+      verify_second_factor_auth(nonce, secure_session)
       create_result(:second_factor_auth_successful)
     else
       nonce = initiate_second_factor_auth(params, secure_session, request)
@@ -42,12 +41,10 @@ class SecondFactor::AuthManager
   private
 
   def initiate_second_factor_auth(params, secure_session, request)
-    action = @action_class.new(params, @current_user, @guardian)
-    config = action.second_factor_auth_required!
+    config = @action.second_factor_auth_required!(params)
     nonce = SecureRandom.alphanumeric(32)
     callback_params = config[:callback_params] || {}
-    # TODO: subfolder support??
-    redirect_path = config[:redirect_path] || "/"
+    redirect_path = config[:redirect_path] || GlobalPath.path("/")
     challenge = {
       nonce: nonce,
       callback_method: request.method,
@@ -64,7 +61,7 @@ class SecondFactor::AuthManager
     nonce
   end
 
-  def second_factor_auth_successful(nonce, secure_session)
+  def verify_second_factor_auth(nonce, secure_session)
     json = secure_session["current_second_factor_auth_challenge"]
     raise Discourse::InvalidAccess.new if json.blank?
 
@@ -77,8 +74,7 @@ class SecondFactor::AuthManager
     end
     secure_session["current_second_factor_auth_challenge"] = nil
     callback_params = challenge[:callback_params]
-    action = @action_class.new(callback_params, @current_user, @guardian)
-    action.second_factor_auth_successful!
+    @action.second_factor_auth_successful!(callback_params)
   end
 
   def add_method(id)
@@ -90,6 +86,6 @@ class SecondFactor::AuthManager
   end
 
   def create_result(status)
-    SecondFactor::AuthManagerResult.new.tap { |res| res.set_status(status) }
+    SecondFactor::AuthManagerResult.new(status)
   end
 end
